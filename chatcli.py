@@ -96,13 +96,42 @@ def string_tree_apply_delta(tree: T, delta: T) -> T:
 
 
 def multiline_prompt(*, swap_newline_keys: bool) -> str:
+    """
+    Prompt the user for a multi-line input.
+
+    Parameters
+    ----------
+    swap_newline_keys : bool
+        Whether to swap the keys for submitting and entering a newline.
+
+    Returns
+    -------
+    str
+        The user's input.
+    """
     # Define the key bindings
     kb = KeyBindings()
 
     def enter(event: KeyPressEvent):
+        """
+        Enter a newline.
+
+        Parameters
+        ----------
+        event : KeyPressEvent
+            The key press event.
+        """
         event.current_buffer.insert_text("\n")
 
     def submit(event: KeyPressEvent):
+        """
+        Submit the input.
+
+        Parameters
+        ----------
+        event : KeyPressEvent
+            The key press event.
+        """
         event.current_buffer.validate_and_handle()
 
     # Bind them
