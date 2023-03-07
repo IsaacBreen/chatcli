@@ -335,6 +335,8 @@ def chatcli(
             The assistant message to send to the model.
         swap_newline_keys:
             Whether to swap the keys for submitting and entering a newline.
+        autosuggest:
+            The autosuggester to use.
     """
 
     # Print a header
