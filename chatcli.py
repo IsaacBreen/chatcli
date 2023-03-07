@@ -3,6 +3,7 @@ Streaming CLI interface for OpenAI's Chat API.
 """
 import json
 from enum import Enum
+from functools import partial
 from typing import *
 
 import fire
@@ -21,6 +22,7 @@ from prompt_toolkit.lexers import PygmentsLexer
 from pygments.lexers.markup import MarkdownLexer  # type: ignore
 
 T = TypeVar("T")
+U = TypeVar("U")
 M = TypeVar("M", MutableMapping, str)
 
 
@@ -48,7 +50,7 @@ class ChatGenerator:
         """
         self.messages.append({"role": role, "content": content})
 
-    def send(self, user_message: str, write: Callable[[str], None]) -> Dict[str, T]:
+    def send(self, user_message: str, write: Callable[[str], T] = partial(print, end="")) -> Dict[str, U]:
         """
         Send a user message to the API.
 
@@ -56,7 +58,8 @@ class ChatGenerator:
             user_message:
                 The user message to send to the API.
             write:
-                A function to write a message to the console.
+                A function to write a message to the console. It will be called each time a response is received from
+                the API that modifies the content.
 
         Returns:
             The response from the API.
