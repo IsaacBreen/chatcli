@@ -323,7 +323,7 @@ def chatcli(
         system: str = "You are a helpful assistant.",
         assistant: Optional[str] = None,
         swap_newline_keys: bool = False,
-        autosuggest: Literal["llm", "history", "none"] = "llm",
+        autosuggest: Literal["llm", "history", "none"] = "history",
 ) -> None:
     """
     Chat with an OpenAI API model using the command line.
