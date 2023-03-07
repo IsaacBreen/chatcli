@@ -1,44 +1,56 @@
 """
 Streaming CLI interface for OpenAI's Chat API.
 """
-import io
-import sys
+import json
+from enum import Enum
 from typing import *
-import pkg_resources
+
 import fire
 import openai
+import pkg_resources
+from prompt_toolkit import PromptSession
+from prompt_toolkit.auto_suggest import AutoSuggest
+from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+from prompt_toolkit.auto_suggest import Suggestion
+from prompt_toolkit.auto_suggest import ThreadedAutoSuggest
+from prompt_toolkit.buffer import Buffer
+from prompt_toolkit.document import Document
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.key_binding import KeyPressEvent
-from prompt_toolkit.shortcuts import prompt
+from prompt_toolkit.lexers import PygmentsLexer
+from pygments.lexers.markup import MarkdownLexer
 
 T = TypeVar("T", MutableMapping, str)
 
 
 class ChatGenerator:
     def __init__(
-        self,
-        messages: Optional[List[Dict[str, str]]] = None,
-        *,
-        text_io: Optional[io.TextIOBase] = sys.stdout,
-        sep: Optional[str] = "\n",
+            self,
+            messages: Optional[List[Dict[str, str]]] = None,
+            *,
+            sep: Optional[str] = "\n",
     ) -> None:
-        self.messages = messages or [{"role": "system", "content": "You are a helpful assistant."}]
-        self.text_io = text_io or sys.stdout
+        self.messages = messages or [
+            {"role": "system", "content": "You are a helpful assistant."}
+        ]
         self.sep = sep
 
-    def __call__(self, user_message: str) -> MutableMapping:
+    def add_message(self, role: str, content: str) -> None:
+        self.messages.append({"role": role, "content": content})
+
+    def send(self, user_message: str, write: Callable[[str], None]) -> Dict[str, str]:
         assert isinstance(user_message, str)
 
         # Add the user's message to the list of messages
-        self.messages.append({"role": "user", "content": user_message})
+        self.add_message("user", user_message)
 
         # Send the messages to the API, accumulate the responses, and print them as they come in
         response_accumulated = None
 
         for response in openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=self.messages,
-            stream=True,
+                model="gpt-3.5-turbo",
+                messages=self.messages,
+                stream=True,
         ):
             if response_accumulated is None:
                 # Set the initial response to the first response (less the delta)
@@ -48,20 +60,28 @@ class ChatGenerator:
                 response_accumulated.delta = string_tree_apply_delta(
                     response_accumulated.delta, response.choices[0].delta
                 )
-            if self.text_io is not None and "content" in response.choices[0].delta:
-                self.text_io.write(response.choices[0].delta.content)
-                self.text_io.flush()
-
-        # Apply the separator
-        if self.text_io is not None:
-            self.text_io.write(self.sep)
-            self.text_io.flush()
+            if "content" in response.choices[0].delta:
+                write(response.choices[0].delta.content)
 
         # Rename the delta to message
         response_accumulated.message = response_accumulated.pop("delta")
 
-        # Get the next message from the user
+        # Apply the separator
+        if self.sep is not None:
+            write(self.sep)
+            response_accumulated.message.content += self.sep
+
+        # Add the response to the list of messages
+        assert response_accumulated.message.role == "assistant"
+        self.add_message("assistant", response_accumulated.message.content)
+
         return response_accumulated
+
+    def pop(self) -> MutableMapping:
+        """
+        Pop the last user message.
+        """
+        return self.messages.pop()
 
 
 def string_tree_apply_delta(tree: T, delta: T) -> T:
@@ -95,12 +115,21 @@ def string_tree_apply_delta(tree: T, delta: T) -> T:
         raise TypeError(f"Invalid type {type(tree)}")
 
 
-def multiline_prompt(*, swap_newline_keys: bool) -> str:
+class PromptCode(Enum):
+    UNDO = 1
+    REDO = 2
+
+
+def multiline_prompt(
+        default: str = "", *, swap_newline_keys: bool, session: PromptSession
+) -> str:
     """
     Prompt the user for a multi-line input.
 
     Parameters
     ----------
+    message : Optional[str]
+        The message to display to the user.
     swap_newline_keys : bool
         Whether to swap the keys for submitting and entering a newline.
 
@@ -142,6 +171,39 @@ def multiline_prompt(*, swap_newline_keys: bool) -> str:
         kb.add("escape", "enter")(enter)
         kb.add("enter")(submit)
 
+    # Add a key binding for undo
+    @kb.add("c-z")
+    def undo(event: KeyPressEvent):
+        """
+        Undo the last user message.
+
+        Parameters
+        ----------
+        event : KeyPressEvent
+            The key press event.
+        """
+        # Clear the prompt entered so far
+        event.app.current_buffer.reset()
+        # Exit the prompt with the UNDO code
+        event.app.exit(result=PromptCode.UNDO)
+
+    # Trigger suggestions on backspace
+    # @kb.add("backspace")
+    def _(event: KeyPressEvent):
+        """
+        Trigger suggestions on backspace.
+
+        Parameters
+        ----------
+        event : KeyPressEvent
+            The key press event.
+        """
+        # Delete the last character
+        if event.app.current_buffer.cursor_position != 0:
+            event.app.current_buffer.cursor_position -= 1
+            event.app.current_buffer.delete(1)
+        event.app.current_buffer.complete_next()
+
     # Define a prompt continuation function
     def prompt_continuation(width: int, line_number: int, wrap_count: int) -> str:
         """
@@ -163,16 +225,97 @@ def multiline_prompt(*, swap_newline_keys: bool) -> str:
         """
         return "... ".rjust(width)
 
-    return prompt(
-        ">>> ", multiline=True, key_bindings=kb, prompt_continuation=prompt_continuation
+    return session.prompt(
+        ">>> ",
+        default=default,
+        multiline=True,
+        key_bindings=kb,
+        prompt_continuation=prompt_continuation,
     )
 
 
+class LLMAutoSuggest(AutoSuggest):
+    def __init__(self, chat: ChatGenerator):
+        self.chat = chat
+        self.prev_completions = []
+        self.num_prev_completions_to_keep = 10
+
+    def get_suggestion(self, buffer: Buffer, document: Document) -> Suggestion | None:
+        """
+        Get the suggestion for the current buffer.
+
+        Parameters
+        ----------
+        buffer : Buffer
+            The current buffer.
+        document : Document
+            The current document.
+
+        Returns
+        -------
+        Suggestion | None
+            The suggestion for the current buffer.
+        """
+        for i, (prev_buffer_text, prev_completion) in enumerate(self.prev_completions):
+            if prev_completion.startswith(buffer.text) and buffer.text.startswith(
+                    prev_buffer_text
+            ):
+                # Move the previous completion to the front of the list
+                self.prev_completions.insert(0, self.prev_completions.pop(i))
+                suggestion = prev_completion[len(buffer.text):]
+                # Return only the first line of the suggestion
+                suggestion_lines = suggestion.splitlines()
+                suggestion = suggestion_lines[0] if suggestion_lines else ""
+                return Suggestion(suggestion)
+
+        # Get the messages as a json
+        chatcli_version = pkg_resources.get_distribution("chatcli").version
+        messages_json = f"ChatCLI v{chatcli_version} | content format: JSON (escaped) | word-wrap: False\n"
+        messages_json += "[\n  " + "".join(
+            json.dumps(message) + ",\n  " for message in self.chat.messages
+        )
+        messages_json += '{"role": "user", "content": "' + json.dumps(buffer.text)[1:-1]
+        stops = ['"}\n', '"},', '\n']
+
+        # Get the suggestion
+        response = openai.Completion.create(
+            model="text-curie-001",
+            prompt=messages_json,
+            stop=stops,
+            temperature=0.0,
+            max_tokens=256,
+        )
+        try:
+            suggestion = json.loads(f'"{response.choices[0].text}"')
+        except json.JSONDecodeError:
+            print(repr(response.choices[0].text))
+            raise
+
+        # Remove the stop token
+        for stop in stops:
+            if suggestion.endswith(stop):
+                suggestion = suggestion[: -len(stop)]
+                break
+
+        # Save the completion
+        if len(self.prev_completions) >= self.num_prev_completions_to_keep:
+            self.prev_completions.pop()
+        self.prev_completions.insert(0, (buffer.text, buffer.text + suggestion))
+
+        # Return only the first line of the suggestion
+        suggestion_lines = suggestion.splitlines()
+        suggestion = suggestion_lines[0] if suggestion_lines else ""
+
+        # Return the suggestion
+        return Suggestion(suggestion)
+
+
 def chatcli(
-    *,
-    system: str = "You are a helpful assistant.",
-    assistant: Optional[str] = None,
-    swap_newline_keys: bool = False,
+        *,
+        system: str = "You are a helpful assistant.",
+        assistant: Optional[str] = None,
+        swap_newline_keys: bool = False,
+        autosuggest: Literal["llm", "history", "none"] = "llm",
 ) -> None:
     """
     Chat with an OpenAI API model using the command line.
@@ -186,6 +329,7 @@ def chatcli(
     swap_newline_keys : bool
         Whether to swap the keys for submitting and entering a newline.
     """
+
     # Print a header
     chatcli_version = pkg_resources.get_distribution("chatcli").version
     print(f"ChatCLI v{chatcli_version}", end=" | ")
@@ -193,21 +337,78 @@ def chatcli(
         print("meta + ↩ submit | ↩ newline")
     else:
         print("↩ : submit | meta + ↩ : newline")
+
     # Create the list of messages
     messages = [{"role": "system", "content": system}]
     if assistant is not None:
         messages.append({"role": "assistant", "content": assistant})
 
     # Create the generator
-    chat = ChatGenerator(messages)
+    chat = ChatGenerator(messages=messages)
 
-    # Get the first message from the user
-    user_message = multiline_prompt(swap_newline_keys=swap_newline_keys)
+    # Create the autosuggester
+    if autosuggest == "llm":
+        autosuggester = LLMAutoSuggest(chat=chat)
+        auto_suggest = ThreadedAutoSuggest(autosuggester)
+    elif autosuggest == "history":
+        auto_suggest = AutoSuggestFromHistory()
+    elif autosuggest == "none":
+        auto_suggest = None
+    else:
+        raise ValueError(f"Invalid autosuggest: {autosuggest}")
 
-    # Send the user's message to the generator
-    while user_message != "exit":
-        chat(user_message)
-        user_message = multiline_prompt(swap_newline_keys=swap_newline_keys)
+    # Create prompt_toolkit objects
+    session = PromptSession(
+        lexer=PygmentsLexer(MarkdownLexer),
+        auto_suggest=auto_suggest,
+    )
+
+    default = ""
+
+    # This is the main loop
+    while True:
+        # Get the user's message
+        user_message = multiline_prompt(
+            swap_newline_keys=swap_newline_keys, session=session, default=default
+        )
+
+        next_default = ""
+
+        if user_message == PromptCode.UNDO:
+            # Undo the prompt
+            session.output.cursor_up(1)
+            # Undo the message
+            while len(chat.messages) > 0 and chat.messages[-1]["role"] in [
+                "user",
+                "assistant",
+            ]:
+                message = chat.messages.pop()
+                # Wind back the prompt
+                for i in range(len(message["content"].splitlines())):
+                    session.output.cursor_up(1)
+                if message["role"] == "user":
+                    next_default = message["content"]
+                    break
+            session.output.erase_down()
+            session.output.flush()
+
+        elif user_message == "exit":
+            break
+        else:
+            assert isinstance(user_message, str)
+
+            def write(message: str) -> None:
+                """
+                Write a message to the console.
+                """
+                session.output.write_raw(message)
+                session.output.flush()
+
+            # Send the user's message to the generator
+            chat.send(user_message, write=write)
+
+        # Set the default
+        default = next_default
 
 
 def test_chatgen() -> None:
@@ -222,10 +423,10 @@ def test_chatgen() -> None:
 
     # Send the user's message to the generator
     assert (
-        "Dodgers"
-        in chat("Who won the world series in 2020?")["message"]["content"]
+            "Dodgers"
+            in chat.send("Who won the world series in 2020?")["message"]["content"]
     )
-    assert "Texas" in chat("Where was it played?")["message"]["content"]
+    assert "Texas" in chat.send("Where was it played?")["message"]["content"]
 
 
 if __name__ == "__main__":
