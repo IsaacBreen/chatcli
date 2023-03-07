@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "chatcli"
-version = "0.1.5"
+version = "0.1.6"
 description = "Streaming CLI interface for OpenAI's Chat API"
 authors = ["IsaacBreen <mail@isaacbreen.com>"]
 license = "MIT"
