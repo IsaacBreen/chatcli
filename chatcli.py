@@ -203,7 +203,7 @@ def multiline_prompt(
         event.app.exit(result=PromptCode.UNDO)
 
     # Trigger suggestions on backspace
-    # @kb.add("backspace")
+    @kb.add("backspace")
     def _(event: KeyPressEvent):
         """
         Trigger suggestions on backspace.
