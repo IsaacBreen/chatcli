@@ -18,9 +18,10 @@ from prompt_toolkit.document import Document
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.key_binding import KeyPressEvent
 from prompt_toolkit.lexers import PygmentsLexer
-from pygments.lexers.markup import MarkdownLexer
+from pygments.lexers.markup import MarkdownLexer  # type: ignore
 
-T = TypeVar("T", MutableMapping, str)
+T = TypeVar("T")
+M = TypeVar("M", MutableMapping, str)
 
 
 class ChatGenerator:
@@ -38,7 +39,7 @@ class ChatGenerator:
     def add_message(self, role: str, content: str) -> None:
         self.messages.append({"role": role, "content": content})
 
-    def send(self, user_message: str, write: Callable[[str], None]) -> Dict[str, str]:
+    def send(self, user_message: str, write: Callable[[str], None]) -> Dict[str, T]:
         assert isinstance(user_message, str)
 
         # Add the user's message to the list of messages
@@ -84,20 +85,20 @@ class ChatGenerator:
         return self.messages.pop()
 
 
-def string_tree_apply_delta(tree: T, delta: T) -> T:
+def string_tree_apply_delta(tree: M, delta: M) -> M:
     """
     Apply a delta to a tree of strings.
 
     Parameters
     ----------
-    tree : T
+    tree : M
         The Python tree to apply the delta to.
-    delta : T
+    delta : M
         The delta to apply to the Python tree.
 
     Returns
     -------
-    T
+    M
         The Python tree with the delta applied.
     """
     if isinstance(tree, MutableMapping):
@@ -128,10 +129,12 @@ def multiline_prompt(
 
     Parameters
     ----------
-    message : Optional[str]
-        The message to display to the user.
+    default : str, optional
+        The default text to display in the prompt, by default ""
     swap_newline_keys : bool
         Whether to swap the keys for submitting and entering a newline.
+    session : PromptSession
+        The prompt session to use.
 
     Returns
     -------
@@ -275,7 +278,7 @@ class LLMAutoSuggest(AutoSuggest):
             json.dumps(message) + ",\n  " for message in self.chat.messages
         )
         messages_json += '{"role": "user", "content": "' + json.dumps(buffer.text)[1:-1]
-        stops = ['"}\n', '"},', '\n']
+        stops = ['"}\n', '"},', "\n"]
 
         # Get the suggestion
         response = openai.Completion.create(
@@ -424,9 +427,13 @@ def test_chatgen() -> None:
     # Send the user's message to the generator
     assert (
             "Dodgers"
-            in chat.send("Who won the world series in 2020?")["message"]["content"]
+            in chat.send("Who won the world series in 2020?", write=print)["message"][
+                "content"
+            ]
     )
-    assert "Texas" in chat.send("Where was it played?")["message"]["content"]
+    assert (
+            "Texas" in chat.send("Where was it played?", write=print)["message"]["content"]
+    )
 
 
 if __name__ == "__main__":
