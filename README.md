@@ -15,6 +15,10 @@ ChatCLI v0.1.0 | ↩ : submit | meta + ↩ : newline
 
 ## Installation
 
+You'll need an OpenAI API key to use ChatCLI. You can get one [here](https://beta.openai.com/).
+
+ChatCLI reads your key from the `OPENAI_API_KEY` environment variable, so you'll also need to set that.
+
 ```bash
 pip install chatcli
 ```
