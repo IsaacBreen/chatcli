@@ -37,9 +37,30 @@ class ChatGenerator:
         self.sep = sep
 
     def add_message(self, role: str, content: str) -> None:
+        """
+        Add a message to the list of messages.
+
+        Args:
+            role:
+                The role of the message.
+            content:
+                The content of the message.
+        """
         self.messages.append({"role": role, "content": content})
 
     def send(self, user_message: str, write: Callable[[str], None]) -> Dict[str, T]:
+        """
+        Send a user message to the API.
+
+        Args:
+            user_message:
+                The user message to send to the API.
+            write:
+                A function to write a message to the console.
+
+        Returns:
+            The response from the API.
+        """
         assert isinstance(user_message, str)
 
         # Add the user's message to the list of messages
@@ -89,16 +110,13 @@ def string_tree_apply_delta(tree: M, delta: M) -> M:
     """
     Apply a delta to a tree of strings.
 
-    Parameters
-    ----------
-    tree : M
-        The Python tree to apply the delta to.
-    delta : M
-        The delta to apply to the Python tree.
+    Args:
+        tree:
+            The Python tree to apply the delta to.
+        delta:
+            The delta to apply to the Python tree.
 
-    Returns
-    -------
-    M
+    Returns:
         The Python tree with the delta applied.
     """
     if isinstance(tree, MutableMapping):
@@ -127,18 +145,15 @@ def multiline_prompt(
     """
     Prompt the user for a multi-line input.
 
-    Parameters
-    ----------
-    default : str, optional
-        The default text to display in the prompt, by default ""
-    swap_newline_keys : bool
-        Whether to swap the keys for submitting and entering a newline.
-    session : PromptSession
-        The prompt session to use.
+    Args:
+        default:
+            The default text to display in the prompt, by default ""
+        swap_newline_keys:
+            Whether to swap the keys for submitting and entering a newline.
+        session:
+            The prompt session to use.
 
-    Returns
-    -------
-    str
+    Returns:
         The user's input.
     """
     # Define the key bindings
@@ -148,10 +163,9 @@ def multiline_prompt(
         """
         Enter a newline.
 
-        Parameters
-        ----------
-        event : KeyPressEvent
-            The key press event.
+        Args:
+            event:
+                The key press event.
         """
         event.current_buffer.insert_text("\n")
 
@@ -159,10 +173,9 @@ def multiline_prompt(
         """
         Submit the input.
 
-        Parameters
-        ----------
-        event : KeyPressEvent
-            The key press event.
+        Args:
+            event:
+                The key press event.
         """
         event.current_buffer.validate_and_handle()
 
@@ -180,10 +193,9 @@ def multiline_prompt(
         """
         Undo the last user message.
 
-        Parameters
-        ----------
-        event : KeyPressEvent
-            The key press event.
+        Args:
+            event:
+                The key press event.
         """
         # Clear the prompt entered so far
         event.app.current_buffer.reset()
@@ -196,10 +208,9 @@ def multiline_prompt(
         """
         Trigger suggestions on backspace.
 
-        Parameters
-        ----------
-        event : KeyPressEvent
-            The key press event.
+        Args:
+            event:
+                The key press event.
         """
         # Delete the last character
         if event.app.current_buffer.cursor_position != 0:
@@ -212,18 +223,15 @@ def multiline_prompt(
         """
         Return the continuation prompt.
 
-        Parameters
-        ----------
-        width : int
-            The width of the prompt.
-        line_number : int
-            The line number of the prompt.
-        wrap_count : int
-            The number of times the prompt has wrapped.
+        Args:
+            width:
+                The width of the prompt.
+            line_number:
+                The line number of the prompt.
+            wrap_count:
+                The number of times the prompt has wrapped.
 
-        Returns
-        -------
-        str
+        Returns:
             The continuation prompt.
         """
         return "... ".rjust(width)
@@ -247,16 +255,13 @@ class LLMAutoSuggest(AutoSuggest):
         """
         Get the suggestion for the current buffer.
 
-        Parameters
-        ----------
-        buffer : Buffer
-            The current buffer.
-        document : Document
-            The current document.
+        Args:
+            buffer:
+                The current buffer.
+            document:
+                The current document.
 
-        Returns
-        -------
-        Suggestion | None
+        Returns:
             The suggestion for the current buffer.
         """
         for i, (prev_buffer_text, prev_completion) in enumerate(self.prev_completions):
@@ -323,14 +328,13 @@ def chatcli(
     """
     Chat with an OpenAI API model using the command line.
 
-    Parameters
-    ----------
-    system : str
-        The system message to send to the model.
-    assistant : Optional[str]
-        The assistant message to send to the model.
-    swap_newline_keys : bool
-        Whether to swap the keys for submitting and entering a newline.
+    Args:
+        system:
+            The system message to send to the model.
+        assistant:
+            The assistant message to send to the model.
+        swap_newline_keys:
+            Whether to swap the keys for submitting and entering a newline.
     """
 
     # Print a header
