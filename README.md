@@ -52,7 +52,7 @@ import chatcli
 generator = chatcli.ChatGenerator()
 
 # Send a message to the generator
-response = generator.send("Write a proof for Riemann's Hypothesis.")
+response = generator.send("Prove Riemann's Hypothesis.")
 
 # Print the response
 print(response["message"]["content"])
