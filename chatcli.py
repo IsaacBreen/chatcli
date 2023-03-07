@@ -346,9 +346,10 @@ def chatcli(
     chatcli_version = pkg_resources.get_distribution("chatcli").version
     print(f"ChatCLI v{chatcli_version}", end=" | ")
     if swap_newline_keys:
-        print("meta + ↩ submit | ↩ newline")
+        # print("meta + ↩ submit | ↩ newline")
+        print("[ALT/⌥] + [↩] to submit | [↩] for newline")
     else:
-        print("↩ : submit | meta + ↩ : newline")
+        print("[↩] to submit | [ALT/⌥] + [↩] for newline")
 
     # Create the list of messages
     messages = [{"role": "system", "content": system}]
