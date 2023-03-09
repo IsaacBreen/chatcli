@@ -47,7 +47,6 @@ ChatCLI can also be used as a Python library. Here's an example:
 
 ```python
 import chatcli
-
 # Create the chat generator
 generator = chatcli.ChatGenerator()
 
