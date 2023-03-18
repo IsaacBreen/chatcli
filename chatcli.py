@@ -2,6 +2,7 @@
 Streaming CLI interface for OpenAI's Chat API.
 """
 import json
+import os
 import threading
 import time
 from enum import Enum
@@ -21,12 +22,13 @@ from prompt_toolkit.document import Document
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.key_binding import KeyPressEvent
 from prompt_toolkit.lexers import PygmentsLexer
-from prompt_toolkit.validation import Validator
 from pygments.lexers.markup import MarkdownLexer  # type: ignore
 
 T = TypeVar("T")
 U = TypeVar("U")
 M = TypeVar("M", MutableMapping, str)
+
+default_model = os.environ.get("OPENAI_CHAT_MODEL", "gpt-3.5-turbo")
 
 start_messages_default = [{"role": "system", "content": "You are a helpful assistant."}]
 
@@ -92,7 +94,7 @@ class ChatGenerator:
 
         try:
             for response in openai.ChatCompletion.create(
-                    model="gpt-3.5-turbo",
+                    model=default_model,
                     messages=self.messages,
                     stream=True,
             ):
@@ -252,7 +254,6 @@ def multiline_prompt(
         """
         return "... ".rjust(width)
 
-
     while True:
         try:
             return session.prompt(
@@ -270,7 +271,6 @@ def multiline_prompt(
                     session.output.cursor_up(2)
                     continue
             raise
-
 
 
 class LLMAutoSuggest(AutoSuggest):
