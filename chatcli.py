@@ -2,6 +2,7 @@
 Streaming CLI interface for OpenAI's Chat API.
 """
 import json
+import logging
 import os
 import threading
 import time
@@ -28,9 +29,9 @@ T = TypeVar("T")
 U = TypeVar("U")
 M = TypeVar("M", MutableMapping, str)
 
-default_model = os.environ.get("OPENAI_CHAT_MODEL", "gpt-3.5-turbo")
+logging.debug('invisible magic')  # <-- magic (but annoying) fix for logging
 
-start_messages_default = [{"role": "system", "content": "You are a helpful assistant."}]
+logger = logging.getLogger(__name__)
 
 
 class ChatGenerator:
@@ -39,9 +40,16 @@ class ChatGenerator:
             messages: Optional[List[Dict[str, str]]] = None,
             *,
             sep: Optional[str] = "\n",
+            model: Optional[str] = None,
     ) -> None:
         self.messages = messages if messages is not None else []
         self.sep = sep
+        if model is None:
+            # Get the model from the environment variable
+            self.model = os.environ.get("OPENAI_CHAT_MODEL", "gpt-3.5-turbo")
+            logger.info(f"Using model {self.model!r} from environment variable 'OPENAI_CHAT_MODEL'")
+        else:
+            self.model = model
 
     def add_message(self, role: str, content: str) -> None:
         """
@@ -93,8 +101,9 @@ class ChatGenerator:
             self.add_message("assistant", response_accumulated.message.content)
 
         try:
+            logger.info(f"Sending messages to API: {json.dumps(self.messages, indent=2)}")
             for response in openai.ChatCompletion.create(
-                    model=default_model,
+                    model=self.model,
                     messages=self.messages,
                     stream=True,
             ):
@@ -352,6 +361,7 @@ def chatcli(
         assistant: Optional[str] = None,
         swap_newline_keys: bool = False,
         autosuggest: Literal["llm", "history", "none"] = "history",
+        verbose: bool = False,
 ) -> None:
     """
     Chat with an OpenAI API model using the command line.
@@ -365,7 +375,16 @@ def chatcli(
             Whether to swap the keys for submitting and entering a newline.
         autosuggest:
             The autosuggester to use.
+        verbose:
+            Whether to print verbose output.
     """
+    # If verbose is enabled, print logs
+    if verbose:
+        logger.setLevel(logging.INFO)
+        logger.warn("Verbose mode may cause formatting issues due to the way chatcli erases and overwrites text using "
+                    "ANSI escape sequences.")
+
+    start_messages_default = [{"role": "system", "content": "You are a helpful assistant."}]
 
     # Print a header
     chatcli_version = pkg_resources.get_distribution("chatcli").version
