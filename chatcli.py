@@ -24,6 +24,7 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.key_binding import KeyPressEvent
 from prompt_toolkit.lexers import PygmentsLexer
 from pygments.lexers.markup import MarkdownLexer  # type: ignore
+import tiktoken
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -32,6 +33,123 @@ M = TypeVar("M", MutableMapping, str)
 logging.debug('invisible magic')  # <-- magic (but annoying) fix for logging
 
 logger = logging.getLogger(__name__)
+
+
+
+def get_num_tokens(text: str, model: str) -> int:
+    """
+    Get the number of tokens in a string.
+
+    Args:
+        text:
+            The string to get the number of tokens for.
+        model:
+            The name of the model used.
+
+    Returns:
+        The number of tokens in the string.
+    """
+    encoder = tiktoken.encoding_for_model(model)
+    return len(encoder.encode(text))
+
+
+def estimate_cost(prompt_tokens: int, completion_tokens: int, model: str) -> float:
+    """
+    Estimate the cost of a usage based on the model, number of prompt tokens, and number of completion tokens.
+
+    Args:
+        prompt_tokens:
+            The number of tokens in the prompt.
+        completion_tokens:
+            The number of tokens in the completion.
+        model:
+            The name of the model used.
+
+    Returns:
+        The estimated cost of the usage.
+    """
+    cost_per_1k_tokens = {
+        "gpt-4": {"prompt": 0.03, "completion": 0.06},
+        "gpt-4-0314": {"prompt": 0.03, "completion": 0.06},
+        "gpt-4-32k": {"prompt": 0.06, "completion": 0.12},
+        "gpt-4-32k-0314": {"prompt": 0.06, "completion": 0.12},
+        "gpt-3.5-turbo": 0.002,
+        "gpt-3.5-turbo-0301": 0.002,
+        "text-davinci-003": 0.02,
+        "text-davinci-002": 0.02,
+        "code-davinci-002": 0.02,
+        "text-curie-001": 0.002,
+        "text-babbage-001": 0.001,
+        "text-ada-001": 0.0004,
+    }
+
+    if model not in cost_per_1k_tokens:
+        raise ValueError(f"Unsupported model: {model}")
+
+    match cost_per_1k_tokens[model]:
+        case {"prompt": float(prompt_cost_per_1k), "completion": float(completion_cost_per_1k)}:
+            prompt_cost = prompt_tokens * (prompt_cost_per_1k / 1000)
+            completion_cost = completion_tokens * (completion_cost_per_1k / 1000)
+            return prompt_cost + completion_cost
+        case float(cost_per_1k):
+            total_tokens = prompt_tokens + completion_tokens
+            cost_per_token = cost_per_1k / 1000
+            return total_tokens * cost_per_token
+        case _:
+            raise ValueError(f"Unsupported cost data format for model {model}: {cost_per_1k_tokens[model]}")
+
+
+def chat_completion(*args, **kwargs):
+    """
+    Wrapper for OpenAI's chat completion API.
+    """
+    if "messages" in kwargs and "model" in kwargs:
+        # Estimate the number of tokens required
+        prompt_tokens = get_num_tokens(json.dumps(kwargs["messages"]), kwargs["model"])
+        logger.info(f"Number of tokens in prompt: {prompt_tokens}")
+        try:
+            min_cost = estimate_cost(prompt_tokens, 1, kwargs["model"])
+            logger.info(f"Minimum cost: USD ${min_cost:.4f}")
+            if "max_tokens" in kwargs:
+                max_cost = estimate_cost(prompt_tokens, kwargs["max_tokens"], kwargs["model"])
+                logger.info(f"Maximum cost: USD {max_cost:.4f}")
+        except ValueError as e:
+            logger.warning(f"Unable to determine minimum/maximum cost: {e}")
+
+    completion = openai.ChatCompletion.create(*args, **kwargs)
+
+    def log_stream_completion_cost(completion):
+        completion_tokens = 0
+        for chunk in completion:
+            for message in chunk.get("choices", []):
+                if "content" in message.get("delta", {}):
+                    completion_tokens += get_num_tokens(message["delta"]["content"], kwargs["model"])
+            yield chunk
+        logger.info(f"Number of tokens in completion: {completion_tokens}")
+        try:
+            cost = estimate_cost(prompt_tokens, completion_tokens, kwargs["model"])
+            logger.info(f"Actual cost: USD ${cost:.4f}")
+        except ValueError as e:
+            logger.warning(f"Unable to determine actual cost: {e}")
+
+    if "messages" in kwargs and "model" in kwargs:
+        if isinstance(completion, Generator):
+            # If the completion is a generator, count the number of tokens in each chunk
+            completion = log_stream_completion_cost(completion)
+        else:
+            # Otherwise, just get the number of tokens
+            completion_tokens = 0
+            for message in completion.get("choices", []):
+                if "content" in message:
+                    completion_tokens += get_num_tokens(message["content"], kwargs["model"])
+            logger.info(f"Number of tokens in completion: {completion_tokens}")
+            try:
+                cost = estimate_cost(prompt_tokens, completion_tokens, kwargs["model"])
+                logger.info(f"Actual cost: USD ${cost:.4f}")
+            except ValueError as e:
+                logger.warning(f"Unable to determine actual cost: {e}")
+
+    return completion
 
 
 class ChatGenerator:
@@ -44,12 +162,7 @@ class ChatGenerator:
     ) -> None:
         self.messages = messages if messages is not None else []
         self.sep = sep
-        if model is None:
-            # Get the model from the environment variable
-            self.model = os.environ.get("OPENAI_CHAT_MODEL", "gpt-3.5-turbo")
-            logger.info(f"Using model {self.model!r} from environment variable 'OPENAI_CHAT_MODEL'")
-        else:
-            self.model = model
+        self.model = model
 
     def add_message(self, role: str, content: str) -> None:
         """
@@ -64,7 +177,7 @@ class ChatGenerator:
         self.messages.append({"role": role, "content": content})
 
     def send(
-            self, user_message: str, write: Callable[[str], T] = partial(print, end="")
+            self, user_message: str, write: Callable[[str], T] = partial(print, end=""),
     ) -> Dict[str, U]:
         """
         Send a user message to the API.
@@ -102,7 +215,7 @@ class ChatGenerator:
 
         try:
             logger.info(f"Sending messages to API: {json.dumps(self.messages, indent=2)}")
-            for response in openai.ChatCompletion.create(
+            for response in chat_completion(
                     model=self.model,
                     messages=self.messages,
                     stream=True,
@@ -359,6 +472,7 @@ def chatcli(
         *,
         messages: Optional[List[Dict[str, str]]] = None,
         assistant: Optional[str] = None,
+        model: Optional[str] = None,
         swap_newline_keys: bool = False,
         autosuggest: Literal["llm", "history", "none"] = "history",
         verbose: bool = False,
@@ -371,6 +485,8 @@ def chatcli(
             The messages to start the chat with.
         assistant:
             The assistant message to send to the model.
+        model:
+            The model to use.
         swap_newline_keys:
             Whether to swap the keys for submitting and entering a newline.
         autosuggest:
@@ -383,6 +499,11 @@ def chatcli(
         logger.setLevel(logging.INFO)
         logger.warn("Verbose mode may cause formatting issues due to the way chatcli erases and overwrites text using "
                     "ANSI escape sequences.")
+
+        if model is None:
+            # Get the model from the environment variable
+            model = os.environ.get("OPENAI_CHAT_MODEL", "gpt-3.5-turbo")
+            logger.info(f"Using model {model!r} from environment variable 'OPENAI_CHAT_MODEL'")
 
     start_messages_default = [{"role": "system", "content": "You are a helpful assistant."}]
 
@@ -405,7 +526,7 @@ def chatcli(
         messages.append({"role": "assistant", "content": assistant})
 
     # Create the generator
-    chat = ChatGenerator(messages=messages)
+    chat = ChatGenerator(messages=messages, model=model)
 
     # Create the autosuggester
     if autosuggest == "llm":
