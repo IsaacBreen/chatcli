@@ -500,10 +500,10 @@ def chatcli(
         logger.warn("Verbose mode may cause formatting issues due to the way chatcli erases and overwrites text using "
                     "ANSI escape sequences.")
 
-        if model is None:
-            # Get the model from the environment variable
-            model = os.environ.get("OPENAI_CHAT_MODEL", "gpt-3.5-turbo")
-            logger.info(f"Using model {model!r} from environment variable 'OPENAI_CHAT_MODEL'")
+    if model is None:
+        # Get the model from the environment variable
+        model = os.environ.get("OPENAI_CHAT_MODEL", "gpt-3.5-turbo")
+        logger.info(f"Using model {model!r} from environment variable 'OPENAI_CHAT_MODEL'")
 
     start_messages_default = [{"role": "system", "content": "You are a helpful assistant."}]
 
