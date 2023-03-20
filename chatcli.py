@@ -495,8 +495,10 @@ def chatcli(
     """
     # If verbose is enabled, print logs
     if verbose:
+        print("Verbose mode is enabled. This may cause formatting issues due to the way chatcli erases and overwrites "
+              "text using ANSI escape sequences.")
         logger.setLevel(logging.INFO)
-        logger.warn("Verbose mode may cause formatting issues due to the way chatcli erases and overwrites text using "
+        logger.warning("Verbose mode may cause formatting issues due to the way chatcli erases and overwrites text using "
                     "ANSI escape sequences.")
 
     if model is None:
@@ -662,5 +664,11 @@ def test_chatgen() -> None:
     )
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """
+    The main function.
+    """
     fire.Fire(chatcli)
+
+if __name__ == "__main__":
+    main()

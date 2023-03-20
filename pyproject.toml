@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "chatcli"
-version = "0.1.17"
+version = "0.1.19"
 description = "Streaming CLI interface for OpenAI's Chat API"
 authors = ["IsaacBreen <mail@isaacbreen.com>"]
 license = "MIT"
@@ -20,4 +20,4 @@ requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
-chatcli = "chatcli:chatcli"
+chatcli = "chatcli:main"
