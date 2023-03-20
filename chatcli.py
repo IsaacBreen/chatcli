@@ -13,6 +13,7 @@ from typing import *
 import fire
 import openai
 import pkg_resources
+import tiktoken
 from prompt_toolkit import PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggest
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
@@ -24,7 +25,6 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.key_binding import KeyPressEvent
 from prompt_toolkit.lexers import PygmentsLexer
 from pygments.lexers.markup import MarkdownLexer  # type: ignore
-import tiktoken
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -33,7 +33,6 @@ M = TypeVar("M", MutableMapping, str)
 logging.debug('invisible magic')  # <-- magic (but annoying) fix for logging
 
 logger = logging.getLogger(__name__)
-
 
 
 def get_num_tokens(text: str, model: str) -> int:
@@ -509,7 +508,7 @@ def chatcli(
 
     # Print a header
     chatcli_version = pkg_resources.get_distribution("chatcli").version
-    print(f"ChatCLI v{chatcli_version}")
+    print(f"ChatCLI v{chatcli_version} with {model}")
     header = []
     if swap_newline_keys:
         header += ["[ALT/⌥] + [↩] to submit", "[↩] for newline"]
