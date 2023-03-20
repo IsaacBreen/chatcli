@@ -1,13 +1,13 @@
 [tool.poetry]
 name = "chatcli"
-version = "0.1.12"
+version = "0.1.13"
 description = "Streaming CLI interface for OpenAI's Chat API"
 authors = ["IsaacBreen <mail@isaacbreen.com>"]
 license = "MIT"
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = "^3.10"
 prompt-toolkit = "^3.0.38"
 fire = "^0.5.0"
 tiktoken = "^0.3.2"
